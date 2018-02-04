@@ -22,7 +22,7 @@ import * as i from './interfaces';
 import {LoginTicket} from './loginticket';
 
 export class OAuth2Client {
-  private certificateCache = {};
+  private certificateCache: i.Certs = {};
   private certificateExpiry?: Date;
   protected readonly options: i.Options;
   credentials: i.Credentials = {};
@@ -128,7 +128,7 @@ export class OAuth2Client {
    * Refreshes the access token.
    * @param refreshToken Existing refresh token.
    */
-  protected async refreshAccessToken(refreshToken?: string) {
+  async refreshAccessToken(refreshToken?: string) {
     refreshToken = refreshToken || this.credentials.refresh_token;
     if (!refreshToken) {
       throw new Error('No refresh token available.');
@@ -224,11 +224,11 @@ export class OAuth2Client {
    * Revokes access token and clears the credentials object
    */
   async revokeCredentials() {
+    this.credentials = {};
     const token = this.credentials.access_token;
     if (!token) {
       throw new Error('No access token to revoke.');
     }
-    this.credentials = {};
     return this.revokeToken(token);
   }
 
@@ -275,7 +275,7 @@ export class OAuth2Client {
       return {certs: this.certificateCache};
     }
 
-    const res = await axios(this.FEDERATED_SIGNON_CERTS_URL);
+    const res = await axios.get<i.Certs>(this.FEDERATED_SIGNON_CERTS_URL);
     const cacheControl = res ? res.headers['cache-control'] : undefined;
     let cacheAge = -1;
     if (cacheControl) {
@@ -286,7 +286,6 @@ export class OAuth2Client {
         cacheAge = Number(regexResult[1]) * 1000;  // milliseconds
       }
     }
-
     const now = new Date();
     this.certificateExpiry =
         cacheAge === -1 ? undefined : new Date(now.getTime() + cacheAge);
@@ -304,7 +303,7 @@ export class OAuth2Client {
    * @param maxExpiry The max expiry the certificate can be (Optional).
    * @return Returns a LoginTicket on verification.
    */
-  protected verifySignedJwtWithCerts(
+  verifySignedJwtWithCerts(
       jwt: string, certs: {}, requiredAudience: string|string[],
       issuers?: string[], maxExpiry?: number) {
     if (!maxExpiry) {

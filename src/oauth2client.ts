@@ -224,8 +224,8 @@ export class OAuth2Client {
    * Revokes access token and clears the credentials object
    */
   async revokeCredentials() {
-    this.credentials = {};
     const token = this.credentials.access_token;
+    this.credentials = {};
     if (!token) {
       throw new Error('No access token to revoke.');
     }
@@ -253,8 +253,9 @@ export class OAuth2Client {
    * @param options that contains all options.
    */
   async verifyIdToken(options: i.VerifyIdTokenOptions) {
-    if (!options.idToken) {
-      throw new Error('The verifyIdToken method requires an ID Token');
+    if (typeof options !== 'object' || !options.idToken) {
+      throw new Error(
+          'This method accepts an options object as the first parameter, which includes the idToken, audience, and maxExpiry.');
     }
     const response = await this.getFederatedSignonCerts();
     const login = this.verifySignedJwtWithCerts(
@@ -433,8 +434,7 @@ export class OAuth2Client {
   protected isTokenExpiring(): boolean {
     const expiryDate = this.credentials.expiry_date;
     const threshold = this.options.eagerRefreshThresholdMillis || 5 * 60 * 1000;
-    return expiryDate ? expiryDate <=
-            ((new Date()).getTime() + threshold) :
+    return expiryDate ? expiryDate <= ((new Date()).getTime() + threshold) :
                         false;
   }
 

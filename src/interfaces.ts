@@ -304,6 +304,4 @@ export enum CodeChallengeMethod {
   S256 = 'S256'
 }
 
-export interface Certs {
-  [index: string]: string;
-}
+export interface Certs { [index: string]: string; }

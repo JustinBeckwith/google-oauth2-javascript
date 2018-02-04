@@ -15,20 +15,24 @@
  */
 
 import * as assert from 'assert';
-import { AxiosRequestConfig } from 'axios';
+import {AxiosRequestConfig} from 'axios';
 import * as crypto from 'crypto';
-import { randomBytes } from 'crypto';
+import {randomBytes} from 'crypto';
 import * as fs from 'fs';
 import * as nock from 'nock';
 import * as path from 'path';
 import * as qs from 'querystring';
 import * as url from 'url';
 
-import { LoginTicket } from '../src/loginticket';
-import { CodeChallengeMethod } from '../src/interfaces';
-import { OAuth2Client } from '../src';
+import {OAuth2Client} from '../src';
+import {CodeChallengeMethod} from '../src/interfaces';
+import {LoginTicket} from '../src/loginticket';
 
 nock.disableNetConnect();
+
+afterEach(() => {
+  nock.cleanAll();
+});
 
 describe('OAuth2 client', () => {
   const clientId = 'CLIENT_ID';
@@ -45,7 +49,7 @@ describe('OAuth2 client', () => {
       response_type: 'code token'
     };
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const generated = client.generateAuthUrl(opts);
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
@@ -60,26 +64,26 @@ describe('OAuth2 client', () => {
   });
 
   it('should throw an error if generateAuthUrl is called with invalid parameters',
-    () => {
-      const opts = {
-        access_type: ACCESS_TYPE,
-        scope: SCOPE,
-        code_challenge_method: CodeChallengeMethod.S256
-      };
+     () => {
+       const opts = {
+         access_type: ACCESS_TYPE,
+         scope: SCOPE,
+         code_challenge_method: CodeChallengeMethod.S256
+       };
 
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      try {
-        client.generateAuthUrl(opts);
-        assert.fail('Expected to throw');
-      } catch (e) {
-        assert.equal(
-          e.message,
-          'If a code_challenge_method is provided, code_challenge must be included.');
-      }
-    });
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       try {
+         client.generateAuthUrl(opts);
+         assert.fail('Expected to throw');
+       } catch (e) {
+         assert.equal(
+             e.message,
+             'If a code_challenge_method is provided, code_challenge must be included.');
+       }
+     });
 
   it('should generate a valid code verifier and resulting challenge', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const codes = client.generateCodeVerifier();
 
     // ensure the code_verifier matches all requirements
@@ -91,7 +95,7 @@ describe('OAuth2 client', () => {
   });
 
   it('should include code challenge and method in the url', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const codes = client.generateCodeVerifier();
     const authUrl = client.generateAuthUrl({
       code_challenge: codes.codeChallenge,
@@ -107,26 +111,26 @@ describe('OAuth2 client', () => {
   });
 
   it('should verifyIdToken properly', async () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-    const fakeCerts = { a: 'a', b: 'b' };
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+    const fakeCerts = {a: 'a', b: 'b'};
     const idToken = 'idToken';
     const audience = 'fakeAudience';
     const maxExpiry = 5;
     const payload =
-      { aud: 'aud', sub: 'sub', iss: 'iss', iat: 1514162443, exp: 1514166043 };
+        {aud: 'aud', sub: 'sub', iss: 'iss', iat: 1514162443, exp: 1514166043};
     nock('https://www.googleapis.com')
-      .get('/oauth2/v1/certs')
-      .reply(200, fakeCerts);
+        .get('/oauth2/v1/certs')
+        .reply(200, fakeCerts);
     client.verifySignedJwtWithCerts =
-      (jwt: string, certs: {}, requiredAudience: string | string[],
-        issuers?: string[], theMaxExpiry?: number) => {
-        assert.equal(jwt, idToken);
-        assert.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
-        assert.equal(requiredAudience, audience);
-        assert.equal(theMaxExpiry, maxExpiry);
-        return new LoginTicket('c', payload);
-      };
-    const result = await client.verifyIdToken({ idToken, audience, maxExpiry });
+        (jwt: string, certs: {}, requiredAudience: string|string[],
+         issuers?: string[], theMaxExpiry?: number) => {
+          assert.equal(jwt, idToken);
+          assert.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
+          assert.equal(requiredAudience, audience);
+          assert.equal(theMaxExpiry, maxExpiry);
+          return new LoginTicket('c', payload);
+        };
+    const result = await client.verifyIdToken({idToken, audience, maxExpiry});
     assert.notEqual(result, null);
     if (result) {
       assert.equal(result.envelope, 'c');
@@ -135,39 +139,39 @@ describe('OAuth2 client', () => {
   });
 
   it('should provide a reasonable error in verifyIdToken with wrong parameters',
-    async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      const fakeCerts = { a: 'a', b: 'b' };
-      const idToken = 'idToken';
-      const audience = 'fakeAudience';
-      const payload = {
-        aud: 'aud',
-        sub: 'sub',
-        iss: 'iss',
-        iat: 1514162443,
-        exp: 1514166043
-      };
-      nock('https://www.googleapis.com')
-        .get('/oauth2/v1/certs')
-        .reply(200, fakeCerts);
-      client.verifySignedJwtWithCerts =
-        (jwt: string, certs: {}, requiredAudience: string | string[],
-          issuers?: string[], theMaxExpiry?: number) => {
-          assert.equal(jwt, idToken);
-          assert.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
-          assert.equal(requiredAudience, audience);
-          return new LoginTicket('c', payload);
-        };
-      try {
-        // tslint:disable-next-line no-any
-        await (client as any).verifyIdToken(idToken, audience);
-        throw new Error('Expected to throw');
-      } catch (e) {
-        assert.equal(
-          e.message,
-          'This method accepts an options object as the first parameter, which includes the idToken, audience, and maxExpiry.');
-      }
-    });
+     async () => {
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       const fakeCerts = {a: 'a', b: 'b'};
+       const idToken = 'idToken';
+       const audience = 'fakeAudience';
+       const payload = {
+         aud: 'aud',
+         sub: 'sub',
+         iss: 'iss',
+         iat: 1514162443,
+         exp: 1514166043
+       };
+       nock('https://www.googleapis.com')
+           .get('/oauth2/v1/certs')
+           .reply(200, fakeCerts);
+       client.verifySignedJwtWithCerts =
+           (jwt: string, certs: {}, requiredAudience: string|string[],
+            issuers?: string[], theMaxExpiry?: number) => {
+             assert.equal(jwt, idToken);
+             assert.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
+             assert.equal(requiredAudience, audience);
+             return new LoginTicket('c', payload);
+           };
+       try {
+         // tslint:disable-next-line no-any
+         await (client as any).verifyIdToken(idToken, audience);
+         throw new Error('Expected to throw');
+       } catch (e) {
+         assert.equal(
+             e.message,
+             'This method accepts an options object as the first parameter, which includes the idToken, audience, and maxExpiry.');
+       }
+     });
 
   it('should allow scopes to be specified as array', (done) => {
     const opts = {
@@ -176,7 +180,7 @@ describe('OAuth2 client', () => {
       response_type: 'code token'
     };
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const generated = client.generateAuthUrl(opts);
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
@@ -188,18 +192,18 @@ describe('OAuth2 client', () => {
   });
 
   it('should set response_type param to code if none is given while' +
-    'generating the consent page url',
-    (done) => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      const generated = client.generateAuthUrl();
-      const parsed = url.parse(generated);
-      if (typeof parsed.query !== 'string') {
-        throw new Error('Unable to parse querystring');
-      }
-      const query = qs.parse(parsed.query);
-      assert.equal(query.response_type, 'code');
-      done();
-    });
+         'generating the consent page url',
+     (done) => {
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       const generated = client.generateAuthUrl();
+       const parsed = url.parse(generated);
+       if (typeof parsed.query !== 'string') {
+         throw new Error('Unable to parse querystring');
+       }
+       const query = qs.parse(parsed.query);
+       assert.equal(query.response_type, 'code');
+       done();
+     });
 
   it('should verify a valid certificate against a jwt', (done) => {
     const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
@@ -210,22 +214,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -233,9 +237,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const login = client.verifySignedJwtWithCerts(
-      data, { keyid: publicKey }, 'testaudience');
+        data, {keyid: publicKey}, 'testaudience');
 
     assert.equal(login.getUserId(), '123456789');
     done();
@@ -250,22 +254,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"wrongaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"wrongaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -273,10 +277,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Wrong recipient/);
     done();
   });
@@ -290,22 +293,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"wrongaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"wrongaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -314,10 +317,9 @@ describe('OAuth2 client', () => {
     data += '.' + signature;
 
     const validAudiences = ['testaudience', 'extra-audience'];
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, validAudiences);
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, validAudiences);
     }, /Wrong recipient/);
     done();
   });
@@ -327,23 +329,23 @@ describe('OAuth2 client', () => {
     const privateKey = fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":1393241597,' +
-      '"exp":1393245497' +
-      '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":1393241597,' +
+        '"exp":1393245497' +
+        '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -352,10 +354,9 @@ describe('OAuth2 client', () => {
     // Originally: data += '.'+signature;
     data += signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Wrong number of segments/);
 
     done();
@@ -370,22 +371,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid"' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid"' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -393,10 +394,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Can\'t parse token envelope/);
 
     done();
@@ -411,22 +411,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer"' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer"' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -434,10 +434,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Can\'t parse token payload/);
 
     done();
@@ -451,28 +450,27 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     const data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64') + '.' +
-      'broken-signature';
+        new Buffer(idToken).toString('base64') + '.' +
+        'broken-signature';
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Invalid token signature/);
 
     done();
@@ -485,21 +483,21 @@ describe('OAuth2 client', () => {
     const now = new Date().getTime() / 1000;
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -507,10 +505,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /No expiration time/);
 
     done();
@@ -525,21 +522,21 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
 
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -547,97 +544,96 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /No issue time/);
 
     done();
   });
 
   it('should fail due to certificate with expiration date in future',
-    (done) => {
-      const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
-      const privateKey =
-        fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
+     (done) => {
+       const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
+       const privateKey =
+           fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
 
-      const maxLifetimeSecs = 86400;
-      const now = new Date().getTime() / 1000;
-      const expiry = now + (2 * maxLifetimeSecs);
-      const idToken = '{' +
-        '"iss":"testissuer",' +
-        '"aud":"testaudience",' +
-        '"azp":"testauthorisedparty",' +
-        '"email_verified":"true",' +
-        '"id":"123456789",' +
-        '"sub":"123456789",' +
-        '"email":"test@test.com",' +
-        '"iat":' + now + ',' +
-        '"exp":' + expiry + '}';
-      const envelope = '{' +
-        '"kid":"keyid",' +
-        '"alg":"RS256"' +
-        '}';
+       const maxLifetimeSecs = 86400;
+       const now = new Date().getTime() / 1000;
+       const expiry = now + (2 * maxLifetimeSecs);
+       const idToken = '{' +
+           '"iss":"testissuer",' +
+           '"aud":"testaudience",' +
+           '"azp":"testauthorisedparty",' +
+           '"email_verified":"true",' +
+           '"id":"123456789",' +
+           '"sub":"123456789",' +
+           '"email":"test@test.com",' +
+           '"iat":' + now + ',' +
+           '"exp":' + expiry + '}';
+       const envelope = '{' +
+           '"kid":"keyid",' +
+           '"alg":"RS256"' +
+           '}';
 
-      let data = new Buffer(envelope).toString('base64') + '.' +
-        new Buffer(idToken).toString('base64');
+       let data = new Buffer(envelope).toString('base64') + '.' +
+           new Buffer(idToken).toString('base64');
 
-      const signer = crypto.createSign('sha256');
-      signer.update(data);
-      const signature = signer.sign(privateKey, 'base64');
+       const signer = crypto.createSign('sha256');
+       signer.update(data);
+       const signature = signer.sign(privateKey, 'base64');
 
-      data += '.' + signature;
+       data += '.' + signature;
 
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      assert.throws(() => {
-        client.verifySignedJwtWithCerts(
-          data, { keyid: publicKey }, 'testaudience');
-      }, /Expiration time too far in future/);
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       assert.throws(() => {
+         client.verifySignedJwtWithCerts(
+             data, {keyid: publicKey}, 'testaudience');
+       }, /Expiration time too far in future/);
 
-      done();
-    });
+       done();
+     });
 
   it('should pass due to expiration date in future with adjusted max expiry',
-    (done) => {
-      const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
-      const privateKey =
-        fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
+     (done) => {
+       const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
+       const privateKey =
+           fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
 
-      const maxLifetimeSecs = 86400;
-      const now = new Date().getTime() / 1000;
-      const expiry = now + (2 * maxLifetimeSecs);
-      const maxExpiry = (3 * maxLifetimeSecs);
-      const idToken = '{' +
-        '"iss":"testissuer",' +
-        '"aud":"testaudience",' +
-        '"azp":"testauthorisedparty",' +
-        '"email_verified":"true",' +
-        '"id":"123456789",' +
-        '"sub":"123456789",' +
-        '"email":"test@test.com",' +
-        '"iat":' + now + ',' +
-        '"exp":' + expiry + '}';
-      const envelope = '{' +
-        '"kid":"keyid",' +
-        '"alg":"RS256"' +
-        '}';
+       const maxLifetimeSecs = 86400;
+       const now = new Date().getTime() / 1000;
+       const expiry = now + (2 * maxLifetimeSecs);
+       const maxExpiry = (3 * maxLifetimeSecs);
+       const idToken = '{' +
+           '"iss":"testissuer",' +
+           '"aud":"testaudience",' +
+           '"azp":"testauthorisedparty",' +
+           '"email_verified":"true",' +
+           '"id":"123456789",' +
+           '"sub":"123456789",' +
+           '"email":"test@test.com",' +
+           '"iat":' + now + ',' +
+           '"exp":' + expiry + '}';
+       const envelope = '{' +
+           '"kid":"keyid",' +
+           '"alg":"RS256"' +
+           '}';
 
-      let data = new Buffer(envelope).toString('base64') + '.' +
-        new Buffer(idToken).toString('base64');
+       let data = new Buffer(envelope).toString('base64') + '.' +
+           new Buffer(idToken).toString('base64');
 
-      const signer = crypto.createSign('sha256');
-      signer.update(data);
-      const signature = signer.sign(privateKey, 'base64');
+       const signer = crypto.createSign('sha256');
+       signer.update(data);
+       const signature = signer.sign(privateKey, 'base64');
 
-      data += '.' + signature;
+       data += '.' + signature;
 
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience', ['testissuer'], maxExpiry);
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       client.verifySignedJwtWithCerts(
+           data, {keyid: publicKey}, 'testaudience', ['testissuer'], maxExpiry);
 
-      done();
-    });
+       done();
+     });
 
   it('should fail due to token being used to early', (done) => {
     const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
@@ -649,22 +645,22 @@ describe('OAuth2 client', () => {
     const expiry = now + (maxLifetimeSecs / 2);
     const issueTime = now + (clockSkews * 2);
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + issueTime + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + issueTime + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -672,10 +668,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Token used too early/);
 
     done();
@@ -691,22 +686,22 @@ describe('OAuth2 client', () => {
     const expiry = now - (maxLifetimeSecs / 2);
     const issueTime = now - (clockSkews * 2);
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + issueTime + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + issueTime + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -714,10 +709,9 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
-      client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience');
+      client.verifySignedJwtWithCerts(data, {keyid: publicKey}, 'testaudience');
     }, /Token used too late/);
 
     done();
@@ -731,22 +725,22 @@ describe('OAuth2 client', () => {
     const now = (new Date().getTime() / 1000);
     const expiry = now + (maxLifetimeSecs / 2);
     const idToken = '{' +
-      '"iss":"invalidissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"invalidissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -754,10 +748,10 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     assert.throws(() => {
       client.verifySignedJwtWithCerts(
-        data, { keyid: publicKey }, 'testaudience', ['testissuer']);
+          data, {keyid: publicKey}, 'testaudience', ['testissuer']);
     }, /Invalid issuer/);
 
     done();
@@ -771,22 +765,22 @@ describe('OAuth2 client', () => {
     const now = (new Date().getTime() / 1000);
     const expiry = now + (maxLifetimeSecs / 2);
     const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
+        '"iss":"testissuer",' +
+        '"aud":"testaudience",' +
+        '"azp":"testauthorisedparty",' +
+        '"email_verified":"true",' +
+        '"id":"123456789",' +
+        '"sub":"123456789",' +
+        '"email":"test@test.com",' +
+        '"iat":' + now + ',' +
+        '"exp":' + expiry + '}';
     const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+        '"kid":"keyid",' +
+        '"alg":"RS256"' +
+        '}';
 
     let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
+        new Buffer(idToken).toString('base64');
 
     const signer = crypto.createSign('sha256');
     signer.update(data);
@@ -794,47 +788,46 @@ describe('OAuth2 client', () => {
 
     data += '.' + signature;
 
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     client.verifySignedJwtWithCerts(
-      data, { keyid: publicKey }, 'testaudience', ['testissuer']);
+        data, {keyid: publicKey}, 'testaudience', ['testissuer']);
   });
 
   it('should be able to retrieve a list of Google certificates', async () => {
     nock('https://www.googleapis.com')
-      .get('/oauth2/v1/certs')
-      .replyWithFile(
-      200,
-      path.join(__dirname, '../../test/fixtures/oauthcerts.json'));
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+        .get('/oauth2/v1/certs')
+        .replyWithFile(
+            200, path.join(__dirname, '../../test/fixtures/oauthcerts.json'));
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const {certs} = await client.getFederatedSignonCerts();
+    console.log(certs);
     assert.equal(Object.keys(certs).length, 2);
     assert.notEqual(certs['a15eea964ab9cce480e5ef4f47cb17b9fa7d0b21'], null);
     assert.notEqual(certs['39596dc3a3f12aa74b481579e4ec944f86d24b95'], null);
   });
 
   it('should be able to retrieve a list of Google certificates from cache again',
-    async () => {
-
-      nock('https://www.googleapis.com')
-        .defaultReplyHeaders({
-          'Cache-Control':
-            'public, max-age=23641, must-revalidate, no-transform',
-          'Content-Type': 'application/json'
-        })
-        .get('/oauth2/v1/certs')
-        .once()
-        .replyWithFile(
-        200,
-        path.join(__dirname, '../../test/fixtures/oauthcerts.json'));
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      const certs = await client.getFederatedSignonCerts();
-      assert.equal(Object.keys(certs).length, 2);
-      const certs2 = client.getFederatedSignonCerts();
-      assert.equal(Object.keys(certs2).length, 2);
-    });
+     async () => {
+       nock('https://www.googleapis.com')
+           .defaultReplyHeaders({
+             'Cache-Control':
+                 'public, max-age=23641, must-revalidate, no-transform',
+             'Content-Type': 'application/json'
+           })
+           .get('/oauth2/v1/certs')
+           .once()
+           .replyWithFile(
+               200,
+               path.join(__dirname, '../../test/fixtures/oauthcerts.json'));
+       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+       const {certs} = await client.getFederatedSignonCerts();
+       assert.equal(Object.keys(certs).length, 2);
+       const certs2 = (await client.getFederatedSignonCerts()).certs;
+       assert.equal(Object.keys(certs2).length, 2);
+     });
 
   it('should set redirect_uri if not provided in options', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const generated = client.generateAuthUrl({});
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
@@ -845,7 +838,7 @@ describe('OAuth2 client', () => {
   });
 
   it('should set client_id if not provided in options', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     const generated = client.generateAuthUrl({});
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
@@ -856,9 +849,8 @@ describe('OAuth2 client', () => {
   });
 
   it('should override redirect_uri if provided in options', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-    const generated =
-      client.generateAuthUrl({ redirect_uri: 'overridden' });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+    const generated = client.generateAuthUrl({redirect_uri: 'overridden'});
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
       throw new Error('Unable to parse querystring');
@@ -868,9 +860,8 @@ describe('OAuth2 client', () => {
   });
 
   it('should override client_id if provided in options', () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-    const generated =
-      client.generateAuthUrl({ client_id: 'client_override' });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+    const generated = client.generateAuthUrl({client_id: 'client_override'});
     const parsed = url.parse(generated);
     if (typeof parsed.query !== 'string') {
       throw new Error('Unable to parse querystring');
@@ -880,7 +871,7 @@ describe('OAuth2 client', () => {
   });
 
   it('should return error in callback on request', async () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     try {
       await client.request({});
       assert.fail('Expected to throw');
@@ -890,12 +881,12 @@ describe('OAuth2 client', () => {
   });
 
   it('should return error in callback on refreshAccessToken', async () => {
-    const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+    const client = new OAuth2Client({clientId, clientSecret, redirectUri});
     try {
       await client.refreshAccessToken();
       assert.fail('Expected to throw');
     } catch (e) {
-      assert.equal(e.message, 'No refresh token is available.');
+      assert.equal(e.message, 'No refresh token available.');
     }
   });
 
@@ -904,154 +895,139 @@ describe('OAuth2 client', () => {
 
     beforeEach(() => {
       scope = nock('https://www.googleapis.com')
-        .post('/oauth2/v4/token', undefined, {
-          reqheaders:
-            { 'content-type': 'application/x-www-form-urlencoded' }
-        })
-        .reply(200, { access_token: 'abc123', expires_in: 1 });
+                  .post('/oauth2/v4/token', undefined, {
+                    reqheaders:
+                        {'content-type': 'application/x-www-form-urlencoded'}
+                  })
+                  .reply(200, {access_token: 'abc123', expires_in: 1});
 
       nock('http://example.com').get('/').reply(200);
     });
 
-    afterEach(() => {
-      nock.cleanAll();
-    });
-
     it('should refresh token if missing access token', async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      client.credentials = { refresh_token: 'refresh-token-placeholder' };
-      await client.request({ url: 'http://example.com' });
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+      client.credentials = {refresh_token: 'refresh-token-placeholder'};
+      await client.request({url: 'http://example.com'});
       assert.equal('abc123', client.credentials.access_token);
     });
 
     it('should refresh if access token is expired', async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       client.credentials = {
         access_token: 'initial-access-token',
         refresh_token: 'refresh-token-placeholder',
         expiry_date: (new Date()).getTime() - 1000
       };
-      await client.request({ url: 'http://example.com' });
+      await client.request({url: 'http://example.com'});
       assert.equal('abc123', client.credentials.access_token);
     });
 
 
     it('should refresh if access token will expired soon and time to refresh' +
-      ' before expiration is set',
-      async () => {
-        const eagerRefreshThresholdMillis = 5000;
-        const client = new OAuth2Client({ clientId, clientSecret, redirectUri, eagerRefreshThresholdMillis });
-        client.credentials = {
-          access_token: 'initial-access-token',
-          refresh_token: 'refresh-token-placeholder',
-          expiry_date: (new Date()).getTime() + 3000
-        };
-        await client.request({ url: 'http://example.com' });
-        assert.equal('abc123', client.credentials.access_token);
-      });
+           ' before expiration is set',
+       async () => {
+         const eagerRefreshThresholdMillis = 5000;
+         const client = new OAuth2Client({
+           clientId,
+           clientSecret,
+           redirectUri,
+           eagerRefreshThresholdMillis
+         });
+         client.credentials = {
+           access_token: 'initial-access-token',
+           refresh_token: 'refresh-token-placeholder',
+           expiry_date: (new Date()).getTime() + 3000
+         };
+         await client.request({url: 'http://example.com'});
+         assert.equal('abc123', client.credentials.access_token);
+       });
 
     it('should not refresh if access token will not expire soon and time to' +
-      ' refresh before expiration is set',
-      async () => {
-        const eagerRefreshThresholdMillis = 5000;
-        const client = new OAuth2Client({ clientId, clientSecret, redirectUri, eagerRefreshThresholdMillis });
+           ' refresh before expiration is set',
+       async () => {
+         const eagerRefreshThresholdMillis = 5000;
+         const client = new OAuth2Client({
+           clientId,
+           clientSecret,
+           redirectUri,
+           eagerRefreshThresholdMillis
+         });
 
-        client.credentials = {
-          access_token: 'initial-access-token',
-          refresh_token: 'refresh-token-placeholder',
-          expiry_date: (new Date()).getTime() + 10000,
-        };
+         client.credentials = {
+           access_token: 'initial-access-token',
+           refresh_token: 'refresh-token-placeholder',
+           expiry_date: (new Date()).getTime() + 10000,
+         };
 
-        await client.request({ url: 'http://example.com' });
+         await client.request({url: 'http://example.com'});
 
-        assert.equal(
-          'initial-access-token', client.credentials.access_token);
-        assert.equal(false, scope.isDone());
-      });
+         assert.equal('initial-access-token', client.credentials.access_token);
+         assert.equal(false, scope.isDone());
+       });
 
     it('should not refresh if not expired', async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       client.credentials = {
         access_token: 'initial-access-token',
         refresh_token: 'refresh-token-placeholder',
         expiry_date: (new Date()).getTime() + 500000
       };
 
-      await client.request({ url: 'http://example.com' });
-      assert.equal(
-        'initial-access-token', client.credentials.access_token);
+      await client.request({url: 'http://example.com'});
+      assert.equal('initial-access-token', client.credentials.access_token);
       assert.equal(false, scope.isDone());
     });
 
     it('should assume access token is not expired', async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       client.credentials = {
         access_token: 'initial-access-token',
         refresh_token: 'refresh-token-placeholder'
       };
 
-      await client.request({ url: 'http://example.com' });
-      assert.equal(
-        'initial-access-token', client.credentials.access_token);
+      await client.request({url: 'http://example.com'});
+      assert.equal('initial-access-token', client.credentials.access_token);
       assert.equal(false, scope.isDone());
-    });
-
-    [401, 403].forEach((statusCode) => {
-      it('should refresh token if the server returns ' + statusCode, async () => {
-        nock('http://example.com').get('/access').reply(statusCode, {
-          error: { code: statusCode, message: 'Invalid Credentials' }
-        });
-
-        const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-
-        client.credentials = {
-          access_token: 'initial-access-token',
-          refresh_token: 'refresh-token-placeholder'
-        };
-
-        await client.request({ url: 'http://example.com/access' });
-        assert.equal('abc123', client.credentials.access_token);
-      });
     });
   });
 
   describe('revokeCredentials()', () => {
     it('should revoke credentials if access token present', async () => {
       const scope = nock('https://accounts.google.com')
-        .get('/o/oauth2/revoke?token=abc')
-        .reply(200, { success: true });
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      client.credentials = { access_token: 'abc', refresh_token: 'abc' };
+                        .get('/o/oauth2/revoke?token=abc')
+                        .reply(200, {success: true});
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+      client.credentials = {access_token: 'abc', refresh_token: 'abc'};
       const res = await client.revokeCredentials();
       assert.equal(res.data!.success, true);
       assert.equal(JSON.stringify(client.credentials), '{}');
     });
 
     it('should clear credentials and return error if no access token to revoke',
-      async () => {
-        const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-        client.credentials = { refresh_token: 'abc' };
-        try {
-          await client.revokeCredentials();
-          assert.fail('Expected to throw');
-        } catch (e) {
-          assert.equal(e.message, 'No access token to revoke.');
-          assert.equal(JSON.stringify(client.credentials), '{}');
-        }
-      });
+       async () => {
+         const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+         client.credentials = {refresh_token: 'abc'};
+         try {
+           await client.revokeCredentials();
+           assert.fail('Expected to throw');
+         } catch (e) {
+           assert.equal(e.message, 'No access token to revoke.');
+           assert.equal(JSON.stringify(client.credentials), '{}');
+         }
+       });
   });
 
   describe('getToken()', () => {
     it('should allow a code_verifier to be passed', async () => {
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       nock('https://www.googleapis.com')
-        .post('/oauth2/v4/token', undefined, {
-          reqheaders: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        })
-        .reply(
-        200, { access_token: 'abc', refresh_token: '123', expires_in: 10 });
+          .post('/oauth2/v4/token', undefined, {
+            reqheaders: {'Content-Type': 'application/x-www-form-urlencoded'}
+          })
+          .reply(
+              200, {access_token: 'abc', refresh_token: '123', expires_in: 10});
       const res = await client.getToken(
-        { code: 'code here', codeVerifier: 'its_verified' });
+          {code: 'code here', codeVerifier: 'its_verified'});
       assert(res.res);
       if (!res.res) return;
       const params = qs.parse(res.res.config.data);
@@ -1061,19 +1037,18 @@ describe('OAuth2 client', () => {
     it('should return expiry_date', async () => {
       const now = (new Date()).getTime();
       const scope =
-        nock('https://www.googleapis.com')
-          .post('/oauth2/v4/token', undefined, {
-            reqheaders:
-              { 'Content-Type': 'application/x-www-form-urlencoded' }
-          })
-          .reply(
-          200,
-          { access_token: 'abc', refresh_token: '123', expires_in: 10 });
-      const client = new OAuth2Client({ clientId, clientSecret, redirectUri });
-      const { tokens } = await client.getToken({ code: 'code here' });
+          nock('https://www.googleapis.com')
+              .post('/oauth2/v4/token', undefined, {
+                reqheaders:
+                    {'Content-Type': 'application/x-www-form-urlencoded'}
+              })
+              .reply(
+                  200,
+                  {access_token: 'abc', refresh_token: '123', expires_in: 10});
+      const client = new OAuth2Client({clientId, clientSecret, redirectUri});
+      const {tokens} = await client.getToken({code: 'code here'});
       assert(tokens!.expiry_date! >= now + (10 * 1000));
       assert(tokens!.expiry_date! <= now + (15 * 1000));
     });
-
   });
 });

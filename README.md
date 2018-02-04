@@ -6,7 +6,6 @@
 [![npm version][npmimg]][npm]
 [![CircleCI][circle-image]][circle-url]
 [![codecov][codecov-image]][codecov-url]
-[![Dependencies][david-dm-img]][david-dm]
 [![Known Vulnerabilities][snyk-image]][snyk-url]
 
 This is Google's officially supported [node.js][node] client library for using OAuth 2.0 authorization and authentication with Google APIs.
@@ -45,8 +44,6 @@ This library is licensed under Apache 2.0. Full license text is available in [LI
 [circle-url]: https://circleci.com/gh/JustinBeckwith/google-oauth2-javascript
 [codecov-image]: https://codecov.io/gh/JustinBeckwith/google-oauth2-javascript/branch/master/graph/badge.svg
 [codecov-url]: https://codecov.io/gh/JustinBeckwith/google-oauth2-javascript
-[david-dm-img]: https://david-dm.org/JustinBeckwith/google-oauth2-javascript/status.svg
-[david-dm]: https://david-dm.org/JustinBeckwith/google-oauth2-javascript
 [greenkeeperimg]: https://badges.greenkeeper.io/JustinBeckwith/google-oauth2-javascript.svg
 [greenkeeper]: https://greenkeeper.io/
 [node]: http://nodejs.org/

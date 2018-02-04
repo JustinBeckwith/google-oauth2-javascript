@@ -1,0 +1,80 @@
+{
+  "name": "@google/oauth2",
+  "version": "0.0.1",
+  "author": "Google Inc.",
+  "description": "A JavaScript Google OAuth2 Client.",
+  "engines": {
+    "node": ">=4"
+  },
+  "main": "./build/src/index.js",
+  "types": "./build/src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google/oauth2-javascript.git"
+  },
+  "keywords": [
+    "google",
+    "api",
+    "google apis",
+    "client",
+    "client library"
+  ],
+  "dependencies": {
+    "axios": "^0.17.1",
+    "query-string": "^5.1.0"
+  },
+  "devDependencies": {
+    "@justinbeckwith/typedoc": "^0.10.1",
+    "@types/mocha": "^2.2.45",
+    "@types/ncp": "^2.0.1",
+    "@types/nock": "^9.1.1",
+    "@types/node": "^9.3.0",
+    "@types/pify": "^3.0.0",
+    "@types/query-string": "^5.0.1",
+    "@types/tmp": "0.0.33",
+    "codecov": "^3.0.0",
+    "gh-pages": "^1.1.0",
+    "gts": "^0.5.3",
+    "js-green-licenses": "^0.4.0",
+    "mocha": "^5.0.0",
+    "ncp": "^2.0.0",
+    "nock": "^9.1.5",
+    "nyc": "^11.4.1",
+    "opn": "^5.1.0",
+    "pify": "^3.0.0",
+    "prettier": "^1.9.2",
+    "server-destroy": "^1.0.1",
+    "source-map-support": "^0.5.0",
+    "tmp": "0.0.33",
+    "typescript": "~2.7.0",
+    "webpack": "^3.10.0"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "build/src",
+    "package.json"
+  ],
+  "nyc": {
+    "exclude": [
+      "build/test"
+    ]
+  },
+  "scripts": {
+    "test": "nyc mocha build/test",
+    "codecov": "nyc report --reporter=json && codecov -f coverage/*.json",
+    "clean": "gts clean",
+    "prepare": "npm run compile",
+    "check": "gts check",
+    "compile": "tsc -p .",
+    "fix": "gts fix && npm run fix-samples",
+    "fix-samples": "prettier --write --single-quote examples/*.js",
+    "pretest": "npm run compile",
+    "posttest": "npm run check && npm run license-check",
+    "license-check": "jsgl --local .",
+    "generate-docs": "typedoc --excludePrivate --excludeExternals --mode modules --out docs src && touch docs/.nojekyll",
+    "publish-docs": "gh-pages --dotfiles --dist docs --remote upstream",
+    "webpack": "webpack"
+  },
+  "license": "Apache-2.0"
+}

@@ -1,6 +1,9 @@
+const path = require('path');
+
 module.exports = {
-  entry: './src/index.js',
+  entry: './build/test/test.oauth2.js',
   output: {
-    filename: './dist/bundle.js'
+    filename: 'test.oauth2.web.js',
+    path: path.resolve(__dirname, 'build/test')
   }
 };

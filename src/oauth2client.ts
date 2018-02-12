@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import axios, {AxiosError, AxiosRequestConfig, AxiosResponse} from 'axios';
-import * as crypto from 'crypto';
-import * as qs from 'query-string';
+import axios, {AxiosError, AxiosPromise, AxiosRequestConfig, AxiosResponse} from 'axios';
+import * as qs from 'querystring';
 
+import * as crypto from './crypto';
 import * as i from './interfaces';
 import {LoginTicket} from './loginticket';
 
@@ -80,18 +80,17 @@ export class OAuth2Client {
    * resulting SHA256. If used, this must be paired with a S256
    * code_challenge_method.
    */
-  generateCodeVerifier() {
-    // base64 encoding uses 6 bits per character, and we want to generate128
+  async generateCodeVerifier() {
+    // base64 encoding uses 6 bits per character, and we want to generate 128
     // characters. 6*128/8 = 96.
-    const randomString = crypto.randomBytes(96).toString('base64');
+    const randomString = crypto.randomString(96);
     // The valid characters in the code_verifier are [A-Z]/[a-z]/[0-9]/
     // "-"/"."/"_"/"~". Base64 encoded strings are pretty close, so we're just
     // swapping out a few chars.
     const codeVerifier =
         randomString.replace(/\+/g, '~').replace(/=/g, '_').replace(/\//g, '-');
     // Generate the base64 encoded SHA256
-    const unencodedCodeChallenge =
-        crypto.createHash('sha256').update(codeVerifier).digest('base64');
+    const unencodedCodeChallenge = await crypto.hashIt(codeVerifier);
     // We need to use base64UrlEncoding instead of standard base64
     const codeChallenge = unencodedCodeChallenge.split('=')[0]
                               .replace(/\+/g, '-')
@@ -139,12 +138,9 @@ export class OAuth2Client {
       client_secret: this.options.clientSecret,
       grant_type: 'refresh_token'
     };
-    const res = await axios.request<i.CredentialRequest>({
-      method: 'POST',
-      url: this.TOKEN_URL,
-      data: qs.stringify(data),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'}
-    });
+    const res = await axios.post<i.CredentialRequest>(
+        this.TOKEN_URL, qs.stringify(data),
+        {headers: {'Content-Type': 'application/x-www-form-urlencoded'}});
     const tokens = res.data as i.Credentials;
     if (res.data && res.data.expires_in) {
       tokens.expiry_date =
@@ -239,7 +235,11 @@ export class OAuth2Client {
    * @param opts Request options.
    * @return Request object
    */
-  async request<T>(opts: AxiosRequestConfig) {
+  async request<T>(url: string): Promise<AxiosResponse<T>>;
+  async request<T>(opts: AxiosRequestConfig): Promise<AxiosResponse<T>>;
+  async request<T>(optsOrUrl: AxiosRequestConfig|
+                   string): Promise<AxiosResponse<T>> {
+    const opts = (typeof optsOrUrl === 'string') ? {url: optsOrUrl} : optsOrUrl;
     const r = await this.getRequestMetadata(opts.url!);
     if (r.headers && r.headers.Authorization) {
       opts.headers = opts.headers || {};
@@ -258,7 +258,7 @@ export class OAuth2Client {
           'This method accepts an options object as the first parameter, which includes the idToken, audience, and maxExpiry.');
     }
     const response = await this.getFederatedSignonCerts();
-    const login = this.verifySignedJwtWithCerts(
+    const login = await this.verifySignedJwtWithCerts(
         options.idToken, response.certs, options.audience,
         OAuth2Client.ISSUERS_, options.maxExpiry);
     return login;
@@ -275,7 +275,6 @@ export class OAuth2Client {
         (nowTime < this.certificateExpiry.getTime())) {
       return {certs: this.certificateCache};
     }
-
     const res = await axios.get<i.Certs>(this.FEDERATED_SIGNON_CERTS_URL);
     const cacheControl = res ? res.headers['cache-control'] : undefined;
     let cacheAge = -1;
@@ -304,7 +303,7 @@ export class OAuth2Client {
    * @param maxExpiry The max expiry the certificate can be (Optional).
    * @return Returns a LoginTicket on verification.
    */
-  verifySignedJwtWithCerts(
+  async verifySignedJwtWithCerts(
       jwt: string, certs: {}, requiredAudience: string|string[],
       issuers?: string[], maxExpiry?: number) {
     if (!maxExpiry) {
@@ -348,7 +347,7 @@ export class OAuth2Client {
     // certs is a legit dynamic object
     // tslint:disable-next-line no-any
     const pem = (certs as any)[envelope.kid];
-    const verified = this.verifyPem(pem, signed, signature, 'base64');
+    const verified = await crypto.verifyPem(pem, signed, signature, 'base64');
 
     if (!verified) {
       throw new Error('Invalid token signature: ' + jwt);
@@ -436,13 +435,5 @@ export class OAuth2Client {
     const threshold = this.options.eagerRefreshThresholdMillis || 5 * 60 * 1000;
     return expiryDate ? expiryDate <= ((new Date()).getTime() + threshold) :
                         false;
-  }
-
-  protected verifyPem(
-      pubkey: string, data: string|Buffer, signature: string,
-      encoding: crypto.HexBase64Latin1Encoding) {
-    const verifier = crypto.createVerify('sha256');
-    verifier.update(data);
-    return verifier.verify(pubkey, signature, encoding);
   }
 }

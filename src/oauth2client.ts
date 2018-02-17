@@ -120,7 +120,7 @@ export class OAuth2Client {
       delete (tokens as i.CredentialRequest).expires_in;
     }
     this.credentials = tokens;
-    return {tokens, res};
+    return tokens;
   }
 
   /**
@@ -147,7 +147,7 @@ export class OAuth2Client {
           ((new Date()).getTime() + (res.data.expires_in * 1000));
       delete (tokens as i.CredentialRequest).expires_in;
     }
-    return {tokens, res};
+    return tokens;
   }
 
   /**
@@ -161,24 +161,22 @@ export class OAuth2Client {
         throw new Error('No refresh token is set.');
       }
       const r = await this.refreshAccessToken(this.credentials.refresh_token);
-      const tokens = r.tokens as i.Credentials;
+      const tokens = r as i.Credentials;
       tokens.refresh_token = this.credentials.refresh_token;
       this.credentials = tokens;
       if (!this.credentials ||
           (this.credentials && !this.credentials.access_token)) {
         throw new Error('Could not refresh access token.');
       }
-      return {token: this.credentials.access_token, res: r.res};
-    } else {
-      return {token: this.credentials.access_token};
     }
+    return this.credentials.access_token;
   }
 
   /**
    * Obtain a set of headers which can be attached to a request.
    * @param url The url for which this request will be made.
    */
-  async getRequestMetadata(url: string) {
+  async getAuthorizedHeaders(url: string) {
     const thisCreds = this.credentials;
 
     // make sure we have an access token or a refresh token
@@ -192,19 +190,19 @@ export class OAuth2Client {
       const headers = {
         Authorization: thisCreds.token_type + ' ' + thisCreds.access_token
       };
-      return {headers};
+      return headers;
     }
 
     // We need an access token.  Lets try to get one!
-    const r = await this.refreshAccessToken(thisCreds.refresh_token);
+    const tokens = await this.refreshAccessToken(thisCreds.refresh_token);
 
     // Save the refresh token for future use.
-    r.tokens.refresh_token = thisCreds.refresh_token;
-    this.credentials = r.tokens;
+    tokens.refresh_token = thisCreds.refresh_token;
+    this.credentials = tokens;
 
     const tokenType = thisCreds.token_type || 'Bearer';
-    const headers = {Authorization: `${tokenType}  ${r.tokens.access_token}`};
-    return {headers, res: r.res};
+    const headers = {Authorization: `${tokenType}  ${tokens.access_token}`};
+    return headers;
   }
 
   /**
@@ -240,10 +238,10 @@ export class OAuth2Client {
   async request<T>(optsOrUrl: AxiosRequestConfig|
                    string): Promise<AxiosResponse<T>> {
     const opts = (typeof optsOrUrl === 'string') ? {url: optsOrUrl} : optsOrUrl;
-    const r = await this.getRequestMetadata(opts.url!);
-    if (r.headers && r.headers.Authorization) {
+    const headers = await this.getAuthorizedHeaders(opts.url!);
+    if (headers && headers.Authorization) {
       opts.headers = opts.headers || {};
-      opts.headers.Authorization = r.headers.Authorization;
+      opts.headers.Authorization = headers.Authorization;
     }
     return axios.request<T>(opts);
   }
@@ -257,10 +255,10 @@ export class OAuth2Client {
       throw new Error(
           'This method accepts an options object as the first parameter, which includes the idToken, audience, and maxExpiry.');
     }
-    const response = await this.getFederatedSignonCerts();
+    const certs = await this.getFederatedSignonCerts();
     const login = await this.verifySignedJwtWithCerts(
-        options.idToken, response.certs, options.audience,
-        OAuth2Client.ISSUERS_, options.maxExpiry);
+        options.idToken, certs, options.audience, OAuth2Client.ISSUERS_,
+        options.maxExpiry);
     return login;
   }
 
@@ -273,7 +271,7 @@ export class OAuth2Client {
     const nowTime = (new Date()).getTime();
     if (this.certificateExpiry &&
         (nowTime < this.certificateExpiry.getTime())) {
-      return {certs: this.certificateCache};
+      return this.certificateCache;
     }
     const res = await axios.get<i.Certs>(this.FEDERATED_SIGNON_CERTS_URL);
     const cacheControl = res ? res.headers['cache-control'] : undefined;
@@ -290,7 +288,7 @@ export class OAuth2Client {
     this.certificateExpiry =
         cacheAge === -1 ? undefined : new Date(now.getTime() + cacheAge);
     this.certificateCache = res.data;
-    return {certs: res.data, res};
+    return res.data;
   }
 
   /**
@@ -304,7 +302,7 @@ export class OAuth2Client {
    * @return Returns a LoginTicket on verification.
    */
   async verifySignedJwtWithCerts(
-      jwt: string, certs: {}, requiredAudience: string|string[],
+      jwt: string, certs: i.Certs, requiredAudience: string|string[],
       issuers?: string[], maxExpiry?: number) {
     if (!maxExpiry) {
       maxExpiry = OAuth2Client.MAX_TOKEN_LIFETIME_SECS_;
@@ -344,9 +342,7 @@ export class OAuth2Client {
       // If this is not present, then there's no reason to attempt verification
       throw new Error('No pem found for envelope: ' + JSON.stringify(envelope));
     }
-    // certs is a legit dynamic object
-    // tslint:disable-next-line no-any
-    const pem = (certs as any)[envelope.kid];
+    const pem = certs[envelope.kid];
     const verified = await crypto.verifyPem(pem, signed, signature, 'base64');
 
     if (!verified) {

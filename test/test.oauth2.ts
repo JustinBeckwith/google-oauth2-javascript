@@ -120,9 +120,10 @@ test('should verifyIdToken properly', async t => {
   const maxExpiry = 5;
   const payload =
       {aud: 'aud', sub: 'sub', iss: 'iss', iat: 1514162443, exp: 1514166043};
+  const header = {alg: 'foo', typ: 'bar'};
 
   client.getFederatedSignonCerts = async () => {
-    return {certs: fakeCerts, res: undefined};
+    return fakeCerts;
   };
 
   client.verifySignedJwtWithCerts = async (
@@ -132,11 +133,11 @@ test('should verifyIdToken properly', async t => {
     t.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
     t.equal(requiredAudience, audience);
     t.equal(theMaxExpiry, maxExpiry);
-    return new LoginTicket('c', payload);
+    return new LoginTicket(header, payload);
   };
   const result = await client.verifyIdToken({idToken, audience, maxExpiry});
   t.notEqual(result, null);
-  t.equal(result.envelope, 'c');
+  t.equal(result.header, header);
   t.equal(result.payload, payload);
   t.end();
 });
@@ -148,6 +149,7 @@ test(
       const fakeCerts = {a: 'a', b: 'b'};
       const idToken = 'idToken';
       const audience = 'fakeAudience';
+      const header = {alg: 'foo', typ: 'bar'};
       const payload = {
         aud: 'aud',
         sub: 'sub',
@@ -161,7 +163,7 @@ test(
         t.equal(jwt, idToken);
         t.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
         t.equal(requiredAudience, audience);
-        return new LoginTicket('c', payload);
+        return new LoginTicket(header, payload);
       };
       try {
         // tslint:disable-next-line no-any
@@ -755,7 +757,7 @@ test('should be able to retrieve a list of Google certificates', async t => {
             }
           });
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
-  const {certs} = await client.getFederatedSignonCerts();
+  const certs = await client.getFederatedSignonCerts();
   t.equal(stub.callCount, 1);
   t.equal(Object.keys(certs).length, 2);
   t.notEqual(certs['a15eea964ab9cce480e5ef4f47cb17b9fa7d0b21'], null);
@@ -781,9 +783,9 @@ test(
                 }
               });
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
-      const {certs} = await client.getFederatedSignonCerts();
+      const certs = await client.getFederatedSignonCerts();
       t.equal(Object.keys(certs).length, 2);
-      const certs2 = (await client.getFederatedSignonCerts()).certs;
+      const certs2 = await client.getFederatedSignonCerts();
       t.equal(stub.callCount, 1);
       t.equal(Object.keys(certs2).length, 2);
       sandbox.restore();
@@ -1034,7 +1036,7 @@ test('should return expiry_date', async t => {
           .returns({
             data: {access_token: 'abc', refresh_token: '123', expires_in: 10}
           });
-  const {tokens} = await client.getToken({code: 'code here'});
+  const tokens = await client.getToken({code: 'code here'});
   t.true(tokens.expiry_date! >= now + (10 * 1000));
   t.true(tokens.expiry_date! <= now + (15 * 1000));
   t.equal(stub.callCount, 1);

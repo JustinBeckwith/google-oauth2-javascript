@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-import {TokenPayload} from './interfaces';
+import {JWTHeader, TokenPayload} from './interfaces';
 
 export class LoginTicket {
-  readonly envelope: string;
+  readonly header: JWTHeader;
   readonly payload: TokenPayload;
 
   /**
    * Create a simple class to extract user ID from an ID Token
    *
-   * @param envelope Envelope of the jwt
+   * @param header The decoded header portion of the JWT
    * @param payload Payload of the jwt
    */
-  constructor(envelope: string, payload: TokenPayload) {
-    this.envelope = envelope;
+  constructor(header: JWTHeader, payload: TokenPayload) {
+    this.header = header;
     this.payload = payload;
   }
 

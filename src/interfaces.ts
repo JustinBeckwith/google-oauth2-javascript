@@ -305,3 +305,8 @@ export enum CodeChallengeMethod {
 }
 
 export interface Certs { [index: string]: string; }
+
+export interface JWTHeader {
+  alg: string;
+  typ: string;
+}

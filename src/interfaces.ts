@@ -304,9 +304,19 @@ export enum CodeChallengeMethod {
   S256 = 'S256'
 }
 
-export interface Certs { [index: string]: string; }
+export interface JWKS { keys: JWK[]; }
+
+export interface JWK {
+  kty: string;
+  alg: string;
+  use: string;
+  kid: string;
+  n: string;
+  e: string;
+}
 
 export interface JWTHeader {
   alg: string;
   typ: string;
+  kid: string;
 }

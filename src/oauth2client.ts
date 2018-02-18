@@ -22,8 +22,7 @@ import * as i from './interfaces';
 import {LoginTicket} from './loginticket';
 
 export class OAuth2Client {
-  private certificateCache: i.Certs = {};
-  private certificateExpiry?: Date;
+  private certificateCache?: {certs: i.JWKS, expiry?: Date};
   protected readonly options: i.Options;
   credentials: i.Credentials = {};
 
@@ -38,7 +37,7 @@ export class OAuth2Client {
   private readonly TOKEN_URL = 'https://www.googleapis.com/oauth2/v4/token';
   private readonly REVOKE_URL = 'https://accounts.google.com/o/oauth2/revoke';
   private readonly FEDERATED_SIGNON_CERTS_URL =
-      'https://www.googleapis.com/oauth2/v1/certs';
+      'https://www.googleapis.com/oauth2/v3/certs';
 
   /**
    * Clock skew - five minutes in seconds
@@ -269,11 +268,11 @@ export class OAuth2Client {
    */
   async getFederatedSignonCerts() {
     const nowTime = (new Date()).getTime();
-    if (this.certificateExpiry &&
-        (nowTime < this.certificateExpiry.getTime())) {
-      return this.certificateCache;
+    if (this.certificateCache && this.certificateCache.expiry &&
+        (nowTime < this.certificateCache.expiry.getTime())) {
+      return this.certificateCache.certs;
     }
-    const res = await axios.get<i.Certs>(this.FEDERATED_SIGNON_CERTS_URL);
+    const res = await axios.get<i.JWKS>(this.FEDERATED_SIGNON_CERTS_URL);
     const cacheControl = res ? res.headers['cache-control'] : undefined;
     let cacheAge = -1;
     if (cacheControl) {
@@ -285,9 +284,10 @@ export class OAuth2Client {
       }
     }
     const now = new Date();
-    this.certificateExpiry =
-        cacheAge === -1 ? undefined : new Date(now.getTime() + cacheAge);
-    this.certificateCache = res.data;
+    this.certificateCache = {
+      certs: res.data,
+      expiry: cacheAge === -1 ? undefined : new Date(now.getTime() + cacheAge)
+    };
     return res.data;
   }
 
@@ -302,7 +302,7 @@ export class OAuth2Client {
    * @return Returns a LoginTicket on verification.
    */
   async verifySignedJwtWithCerts(
-      jwt: string, certs: i.Certs, requiredAudience: string|string[],
+      jwt: string, certs: i.JWKS, requiredAudience: string|string[],
       issuers?: string[], maxExpiry?: number) {
     if (!maxExpiry) {
       maxExpiry = OAuth2Client.MAX_TOKEN_LIFETIME_SECS_;
@@ -315,44 +315,42 @@ export class OAuth2Client {
     const signed = segments[0] + '.' + segments[1];
     const signature = segments[2];
 
-    let envelope;
+    let header: i.JWTHeader;
     let payload: i.TokenPayload;
 
     try {
-      envelope = JSON.parse(this.decodeBase64(segments[0]));
+      header = JSON.parse(this.decodeBase64(segments[0]));
     } catch (err) {
-      throw new Error('Can\'t parse token envelope: ' + segments[0]);
+      throw new Error(`Can't parse token header: ${segments[0]}`);
     }
 
-    if (!envelope) {
-      throw new Error('Can\'t parse token envelope: ' + segments[0]);
+    if (!header) {
+      throw new Error(`Can't parse token header: ${segments[0]}`);
     }
 
     try {
       payload = JSON.parse(this.decodeBase64(segments[1]));
     } catch (err) {
-      throw new Error('Can\'t parse token payload: ' + segments[0]);
+      throw new Error(`Can't parse token payload: ${segments[0]}`);
     }
 
     if (!payload) {
-      throw new Error('Can\'t parse token payload: ' + segments[1]);
+      throw new Error(`Can't parse token payload: ${segments[1]}`);
     }
 
-    if (!certs.hasOwnProperty(envelope.kid)) {
+    const jwkSet = certs.keys.filter(x => (x.kid === header.kid));
+    if (jwkSet.length === 0) {
       // If this is not present, then there's no reason to attempt verification
-      throw new Error('No pem found for envelope: ' + JSON.stringify(envelope));
+      throw new Error(`No JWK found for header: ${JSON.stringify(header)}`);
     }
-    const pem = certs[envelope.kid];
-    const verified = await crypto.verifyPem(pem, signed, signature, 'base64');
 
+    const verified = await crypto.verify(jwkSet[0], signed, signature);
     if (!verified) {
       throw new Error('Invalid token signature: ' + jwt);
     }
-
     if (!payload.iat) {
       throw new Error('No issue time in token: ' + JSON.stringify(payload));
     }
-
     if (!payload.exp) {
       throw new Error(
           'No expiration time in token: ' + JSON.stringify(payload));
@@ -375,9 +373,8 @@ export class OAuth2Client {
     const latest = exp + OAuth2Client.CLOCK_SKEW_SECS_;
 
     if (now < earliest) {
-      throw new Error(
-          'Token used too early, ' + now + ' < ' + earliest + ': ' +
-          JSON.stringify(payload));
+      throw new Error(`Token used too early, ${now} < ${earliest}: ${
+          JSON.stringify(payload)}`);
     }
 
     if (now > latest) {
@@ -387,9 +384,8 @@ export class OAuth2Client {
     }
 
     if (issuers && issuers.indexOf(payload.iss) < 0) {
-      throw new Error(
-          'Invalid issuer, expected one of [' + issuers + '], but got ' +
-          payload.iss);
+      throw new Error(`Invalid issuer, expected one of [${issuers}], but got ${
+          payload.iss}`);
     }
 
     // Check the audience matches if we have one
@@ -408,7 +404,7 @@ export class OAuth2Client {
             'Wrong recipient, payload audience != requiredAudience');
       }
     }
-    return new LoginTicket(envelope, payload);
+    return new LoginTicket(header, payload);
   }
 
   /**

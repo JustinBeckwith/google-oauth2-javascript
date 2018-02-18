@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-import axios, {AxiosResponse} from 'axios';
+import axios from 'axios';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as qs from 'querystring';
 import * as sinon from 'sinon';
 import * as test from 'tape';
@@ -24,9 +23,8 @@ import * as url from 'url';
 
 import {OAuth2Client} from '../src';
 import * as crypto from '../src/crypto';
-import {CodeChallengeMethod, CredentialRequest} from '../src/interfaces';
+import {CodeChallengeMethod, JWKS} from '../src/interfaces';
 import {LoginTicket} from '../src/loginticket';
-
 
 const clientId = 'CLIENT_ID';
 const clientSecret = 'CLIENT_SECRET';
@@ -35,10 +33,9 @@ const ACCESS_TYPE = 'offline';
 const SCOPE = 'scopex';
 const SCOPE_ARRAY = ['scopex', 'scopey'];
 
-const publicKey = fs.readFileSync('./test/fixtures/public.pem', 'utf-8');
 const privateKey = fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
-const oauthcerts =
-    JSON.parse(fs.readFileSync('./test/fixtures/oauthcerts.json', 'utf-8'));
+const oauthcerts: JWKS =
+    JSON.parse(fs.readFileSync('./test/fixtures/private.json', 'utf-8'));
 
 test('should generate a valid consent page url', t => {
   const opts = {
@@ -114,23 +111,22 @@ test('should include code challenge and method in the url', async t => {
 
 test('should verifyIdToken properly', async t => {
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
-  const fakeCerts = {a: 'a', b: 'b'};
   const idToken = 'idToken';
   const audience = 'fakeAudience';
   const maxExpiry = 5;
   const payload =
       {aud: 'aud', sub: 'sub', iss: 'iss', iat: 1514162443, exp: 1514166043};
-  const header = {alg: 'foo', typ: 'bar'};
+  const header = {alg: 'foo', typ: 'bar', kid: 'tycho'};
 
   client.getFederatedSignonCerts = async () => {
-    return fakeCerts;
+    return oauthcerts;
   };
 
   client.verifySignedJwtWithCerts = async (
       jwt: string, certs: {}, requiredAudience: string|string[],
       issuers?: string[], theMaxExpiry?: number) => {
     t.equal(jwt, idToken);
-    t.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
+    t.deepEqual(certs, oauthcerts);
     t.equal(requiredAudience, audience);
     t.equal(theMaxExpiry, maxExpiry);
     return new LoginTicket(header, payload);
@@ -149,7 +145,7 @@ test(
       const fakeCerts = {a: 'a', b: 'b'};
       const idToken = 'idToken';
       const audience = 'fakeAudience';
-      const header = {alg: 'foo', typ: 'bar'};
+      const header = {alg: 'foo', typ: 'bar', kid: 'kepler'};
       const payload = {
         aud: 'aud',
         sub: 'sub',
@@ -161,7 +157,7 @@ test(
           jwt: string, certs: {}, requiredAudience: string|string[],
           issuers?: string[], theMaxExpiry?: number) => {
         t.equal(jwt, idToken);
-        t.equal(JSON.stringify(certs), JSON.stringify(fakeCerts));
+        t.deepEqual(certs, fakeCerts);
         t.equal(requiredAudience, audience);
         return new LoginTicket(header, payload);
       };
@@ -212,32 +208,25 @@ test('should verify a valid certificate against a jwt', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
-      new Buffer(idToken).toString('base64');
-
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  let data = Buffer.from(header).toString('base64') + '.' +
+      Buffer.from(idToken).toString('base64');
   const signature = await crypto.getSignature(data, privateKey);
-
   data += '.' + signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
-  const login = await client.verifySignedJwtWithCerts(
-      data, {keyid: publicKey}, 'testaudience');
-
+  const login =
+      await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   t.equal(login.getUserId(), '123456789');
   t.end();
 });
@@ -247,22 +236,20 @@ test('should fail due to invalid audience', async t => {
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
 
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"wrongaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'wrongaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -270,8 +257,7 @@ test('should fail due to invalid audience', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Wrong recipient'), 0);
     t.end();
@@ -282,23 +268,20 @@ test('should fail due to invalid array of audiences', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'wrongaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"wrongaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -306,8 +289,7 @@ test('should fail due to invalid array of audiences', async t => {
   const validAudiences = ['testaudience', 'extra-audience'];
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, validAudiences);
+    await client.verifySignedJwtWithCerts(data, oauthcerts, validAudiences);
   } catch (e) {
     t.equal(e.message.indexOf('Wrong recipient'), 0);
     t.end();
@@ -315,73 +297,59 @@ test('should fail due to invalid array of audiences', async t => {
 });
 
 test('should fail due to invalid signature', async t => {
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":1393241597,' +
-      '"exp":1393245497' +
-      '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: 1393241597,
+    exp: 1393245497
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
-
   const signature = await crypto.getSignature(data, privateKey);
-
   // Originally: data += '.'+signature;
   data += signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Wrong number of segments'), 0);
     t.end();
   }
 });
 
-test('should fail due to invalid envelope', async t => {
+test('should fail due to invalid header', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
 
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid"' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  // Make the header invalid JSON by slicing it
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'}).slice(2);
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
-
   const signature = await crypto.getSignature(data, privateKey);
-
   data += '.' + signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
-    t.equal(e.message.indexOf('Can\'t parse token envelope'), 0);
+    t.equal(e.message.indexOf('Can\'t parse token header'), 0);
     t.end();
   }
 });
@@ -391,32 +359,27 @@ test('should fail due to invalid payload', async t => {
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
 
-  const idToken = '{' +
-      '"iss":"testissuer"' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  // Create an invalid payload by slicing the stringified json
+  const idToken = JSON.stringify({
+                        iss: 'testissuer',
+                        aud: 'testaudience',
+                        azp: 'testauthorisedparty',
+                        email_verified: true,
+                        id: '123456789',
+                        sub: '123456789',
+                        email: 'test@test.com',
+                        iat: now,
+                        exp: expiry
+                      })
+                      .slice(2);  // <---
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
-
   const signature = await crypto.getSignature(data, privateKey);
-
   data += '.' + signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Can\'t parse token payload'), 0);
     t.end();
@@ -427,30 +390,24 @@ test('should fail due to invalid signature', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
-
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  const data = new Buffer(envelope).toString('base64') + '.' +
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  const data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64') + '.' +
       'broken-signature';
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Invalid token signature'), 0);
     t.end();
@@ -459,32 +416,24 @@ test('should fail due to invalid signature', async t => {
 
 test('should fail due to no expiration date', async t => {
   const now = new Date().getTime() / 1000;
-
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: 'true',
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
-
   const signature = await crypto.getSignature(data, privateKey);
-
   data += '.' + signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('No expiration time'), 0);
     t.end();
@@ -495,31 +444,24 @@ test('should fail due to no issue time', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
-
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
-
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: 'true',
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
-
   const signature = await crypto.getSignature(data, privateKey);
   data += '.' + signature;
-
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('No issue time'), 0);
     t.end();
@@ -532,22 +474,20 @@ test(
       const maxLifetimeSecs = 86400;
       const now = new Date().getTime() / 1000;
       const expiry = now + (2 * maxLifetimeSecs);
-      const idToken = '{' +
-          '"iss":"testissuer",' +
-          '"aud":"testaudience",' +
-          '"azp":"testauthorisedparty",' +
-          '"email_verified":"true",' +
-          '"id":"123456789",' +
-          '"sub":"123456789",' +
-          '"email":"test@test.com",' +
-          '"iat":' + now + ',' +
-          '"exp":' + expiry + '}';
-      const envelope = '{' +
-          '"kid":"keyid",' +
-          '"alg":"RS256"' +
-          '}';
+      const idToken = JSON.stringify({
+        iss: 'testissuer',
+        aud: 'testaudience',
+        azp: 'testauthorisedparty',
+        email_verified: true,
+        id: '123456789',
+        sub: '123456789',
+        email: 'test@test.com',
+        iat: now,
+        exp: expiry
+      });
+      const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-      let data = new Buffer(envelope).toString('base64') + '.' +
+      let data = new Buffer(header).toString('base64') + '.' +
           new Buffer(idToken).toString('base64');
 
       const signature = await crypto.getSignature(data, privateKey);
@@ -556,8 +496,7 @@ test(
 
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       try {
-        await client.verifySignedJwtWithCerts(
-            data, {keyid: publicKey}, 'testaudience');
+        await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
       } catch (e) {
         t.equal(e.message.indexOf('Expiration time too far in future'), 0);
         t.end();
@@ -571,22 +510,20 @@ test(
       const now = new Date().getTime() / 1000;
       const expiry = now + (2 * maxLifetimeSecs);
       const maxExpiry = (3 * maxLifetimeSecs);
-      const idToken = '{' +
-          '"iss":"testissuer",' +
-          '"aud":"testaudience",' +
-          '"azp":"testauthorisedparty",' +
-          '"email_verified":"true",' +
-          '"id":"123456789",' +
-          '"sub":"123456789",' +
-          '"email":"test@test.com",' +
-          '"iat":' + now + ',' +
-          '"exp":' + expiry + '}';
-      const envelope = '{' +
-          '"kid":"keyid",' +
-          '"alg":"RS256"' +
-          '}';
+      const idToken = JSON.stringify({
+        iss: 'testissuer',
+        aud: 'testaudience',
+        azp: 'testauthorisedparty',
+        email_verified: true,
+        id: '123456789',
+        sub: '123456789',
+        email: 'test@test.com',
+        iat: now,
+        exp: expiry
+      });
+      const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-      let data = new Buffer(envelope).toString('base64') + '.' +
+      let data = new Buffer(header).toString('base64') + '.' +
           new Buffer(idToken).toString('base64');
 
       const signature = await crypto.getSignature(data, privateKey);
@@ -595,7 +532,7 @@ test(
 
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       await client.verifySignedJwtWithCerts(
-          data, {keyid: publicKey}, 'testaudience', ['testissuer'], maxExpiry);
+          data, oauthcerts, 'testaudience', ['testissuer'], maxExpiry);
       t.end();
     });
 
@@ -605,22 +542,20 @@ test('should fail due to token being used too early', async t => {
   const now = (new Date().getTime() / 1000);
   const expiry = now + (maxLifetimeSecs / 2);
   const issueTime = now + (clockSkews * 2);
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + issueTime + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: issueTime,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -629,8 +564,7 @@ test('should fail due to token being used too early', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Token used too early'), 0);
     t.end();
@@ -643,22 +577,20 @@ test('should fail due to token being used too late', async t => {
   const now = (new Date().getTime() / 1000);
   const expiry = now - (maxLifetimeSecs / 2);
   const issueTime = now - (clockSkews * 2);
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + issueTime + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: issueTime,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -667,8 +599,7 @@ test('should fail due to token being used too late', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Token used too late'), 0);
     t.end();
@@ -679,22 +610,20 @@ test('should fail due to invalid issuer', async t => {
   const maxLifetimeSecs = 86400;
   const now = (new Date().getTime() / 1000);
   const expiry = now + (maxLifetimeSecs / 2);
-  const idToken = '{' +
-      '"iss":"invalidissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+  const idToken = JSON.stringify({
+    iss: 'invalidissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: true,
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -703,7 +632,7 @@ test('should fail due to invalid issuer', async t => {
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
     await client.verifySignedJwtWithCerts(
-        data, {keyid: publicKey}, 'testaudience', ['testissuer']);
+        data, oauthcerts, 'testaudience', ['testissuer']);
   } catch (e) {
     t.equal(e.message.indexOf('Invalid issuer'), 0);
     t.end();
@@ -714,22 +643,20 @@ test('should pass due to valid issuer', async t => {
   const maxLifetimeSecs = 86400;
   const now = (new Date().getTime() / 1000);
   const expiry = now + (maxLifetimeSecs / 2);
-  const idToken = '{' +
-      '"iss":"testissuer",' +
-      '"aud":"testaudience",' +
-      '"azp":"testauthorisedparty",' +
-      '"email_verified":"true",' +
-      '"id":"123456789",' +
-      '"sub":"123456789",' +
-      '"email":"test@test.com",' +
-      '"iat":' + now + ',' +
-      '"exp":' + expiry + '}';
-  const envelope = '{' +
-      '"kid":"keyid",' +
-      '"alg":"RS256"' +
-      '}';
+  const idToken = JSON.stringify({
+    iss: 'testissuer',
+    aud: 'testaudience',
+    azp: 'testauthorisedparty',
+    email_verified: 'true',
+    id: '123456789',
+    sub: '123456789',
+    email: 'test@test.com',
+    iat: now,
+    exp: expiry
+  });
+  const header = JSON.stringify({kid: 'keyid', alg: 'RS256'});
 
-  let data = new Buffer(envelope).toString('base64') + '.' +
+  let data = new Buffer(header).toString('base64') + '.' +
       new Buffer(idToken).toString('base64');
 
   const signature = await crypto.getSignature(data, privateKey);
@@ -738,7 +665,7 @@ test('should pass due to valid issuer', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   await client.verifySignedJwtWithCerts(
-      data, {keyid: publicKey}, 'testaudience', ['testissuer']);
+      data, oauthcerts, 'testaudience', ['testissuer']);
   t.end();
 });
 
@@ -746,7 +673,7 @@ test('should be able to retrieve a list of Google certificates', async t => {
   const sandbox = sinon.sandbox.create();
   const stub =
       sandbox.stub(axios, 'get')
-          .withArgs('https://www.googleapis.com/oauth2/v1/certs')
+          .withArgs('https://www.googleapis.com/oauth2/v3/certs')
           .returns({
             status: 200,
             data: oauthcerts,
@@ -759,9 +686,8 @@ test('should be able to retrieve a list of Google certificates', async t => {
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   const certs = await client.getFederatedSignonCerts();
   t.equal(stub.callCount, 1);
-  t.equal(Object.keys(certs).length, 2);
-  t.notEqual(certs['a15eea964ab9cce480e5ef4f47cb17b9fa7d0b21'], null);
-  t.notEqual(certs['39596dc3a3f12aa74b481579e4ec944f86d24b95'], null);
+  t.equal(certs.keys.length, 1);
+  t.notEqual(certs.keys[0], null);
   sandbox.restore();
   t.end();
 });
@@ -772,7 +698,7 @@ test(
       const sandbox = sinon.sandbox.create();
       const stub =
           sandbox.stub(axios, 'get')
-              .withArgs('https://www.googleapis.com/oauth2/v1/certs')
+              .withArgs('https://www.googleapis.com/oauth2/v3/certs')
               .returns({
                 status: 200,
                 data: oauthcerts,
@@ -784,10 +710,10 @@ test(
               });
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       const certs = await client.getFederatedSignonCerts();
-      t.equal(Object.keys(certs).length, 2);
+      t.equal(certs.keys.length, 1);
       const certs2 = await client.getFederatedSignonCerts();
       t.equal(stub.callCount, 1);
-      t.equal(Object.keys(certs2).length, 2);
+      t.equal(certs2.keys.length, 1);
       sandbox.restore();
       t.end();
     });

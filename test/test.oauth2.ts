@@ -15,7 +15,6 @@
  */
 
 import axios from 'axios';
-import * as fs from 'fs';
 import * as qs from 'querystring';
 import * as sinon from 'sinon';
 import * as test from 'tape';
@@ -23,7 +22,7 @@ import * as url from 'url';
 
 import {OAuth2Client} from '../src';
 import * as crypto from '../src/crypto';
-import {CodeChallengeMethod, JWKS} from '../src/interfaces';
+import {CodeChallengeMethod, JWK, JWKS} from '../src/interfaces';
 import {LoginTicket} from '../src/loginticket';
 
 const clientId = 'CLIENT_ID';
@@ -33,9 +32,11 @@ const ACCESS_TYPE = 'offline';
 const SCOPE = 'scopex';
 const SCOPE_ARRAY = ['scopex', 'scopey'];
 
-const privateKey = fs.readFileSync('./test/fixtures/private.pem', 'utf-8');
-const oauthcerts: JWKS =
-    JSON.parse(fs.readFileSync('./test/fixtures/private.json', 'utf-8'));
+const privateKey: JWK = require('../../test/fixtures/private.json');
+const publicKey: JWK = require('../../test/fixtures/public.json');
+const publicKeys: JWKS = {
+  keys: [publicKey]
+};
 
 test('should generate a valid consent page url', t => {
   const opts = {
@@ -119,14 +120,14 @@ test('should verifyIdToken properly', async t => {
   const header = {alg: 'foo', typ: 'bar', kid: 'tycho'};
 
   client.getFederatedSignonCerts = async () => {
-    return oauthcerts;
+    return publicKeys;
   };
 
   client.verifySignedJwtWithCerts = async (
       jwt: string, certs: {}, requiredAudience: string|string[],
       issuers?: string[], theMaxExpiry?: number) => {
     t.equal(jwt, idToken);
-    t.deepEqual(certs, oauthcerts);
+    t.deepEqual(certs, publicKeys);
     t.equal(requiredAudience, audience);
     t.equal(theMaxExpiry, maxExpiry);
     return new LoginTicket(header, payload);
@@ -204,7 +205,7 @@ test(
       t.end();
     });
 
-test('should verify a valid certificate against a jwt', async t => {
+test.only('should verify a valid certificate against a jwt', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);
@@ -226,7 +227,7 @@ test('should verify a valid certificate against a jwt', async t => {
   data += '.' + signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   const login =
-      await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+      await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   t.equal(login.getUserId(), '123456789');
   t.end();
 });
@@ -257,7 +258,7 @@ test('should fail due to invalid audience', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Wrong recipient'), 0);
     t.end();
@@ -289,7 +290,7 @@ test('should fail due to invalid array of audiences', async t => {
   const validAudiences = ['testaudience', 'extra-audience'];
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, validAudiences);
+    await client.verifySignedJwtWithCerts(data, publicKeys, validAudiences);
   } catch (e) {
     t.equal(e.message.indexOf('Wrong recipient'), 0);
     t.end();
@@ -316,7 +317,7 @@ test('should fail due to invalid signature', async t => {
   data += signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Wrong number of segments'), 0);
     t.end();
@@ -347,7 +348,7 @@ test('should fail due to invalid header', async t => {
   data += '.' + signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Can\'t parse token header'), 0);
     t.end();
@@ -379,7 +380,7 @@ test('should fail due to invalid payload', async t => {
   data += '.' + signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Can\'t parse token payload'), 0);
     t.end();
@@ -407,7 +408,7 @@ test('should fail due to invalid signature', async t => {
       'broken-signature';
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Invalid token signature'), 0);
     t.end();
@@ -433,7 +434,7 @@ test('should fail due to no expiration date', async t => {
   data += '.' + signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('No expiration time'), 0);
     t.end();
@@ -461,7 +462,7 @@ test('should fail due to no issue time', async t => {
   data += '.' + signature;
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('No issue time'), 0);
     t.end();
@@ -496,7 +497,7 @@ test(
 
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       try {
-        await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+        await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
       } catch (e) {
         t.equal(e.message.indexOf('Expiration time too far in future'), 0);
         t.end();
@@ -532,7 +533,7 @@ test(
 
       const client = new OAuth2Client({clientId, clientSecret, redirectUri});
       await client.verifySignedJwtWithCerts(
-          data, oauthcerts, 'testaudience', ['testissuer'], maxExpiry);
+          data, publicKeys, 'testaudience', ['testissuer'], maxExpiry);
       t.end();
     });
 
@@ -564,7 +565,7 @@ test('should fail due to token being used too early', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Token used too early'), 0);
     t.end();
@@ -599,7 +600,7 @@ test('should fail due to token being used too late', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
-    await client.verifySignedJwtWithCerts(data, oauthcerts, 'testaudience');
+    await client.verifySignedJwtWithCerts(data, publicKeys, 'testaudience');
   } catch (e) {
     t.equal(e.message.indexOf('Token used too late'), 0);
     t.end();
@@ -632,7 +633,7 @@ test('should fail due to invalid issuer', async t => {
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   try {
     await client.verifySignedJwtWithCerts(
-        data, oauthcerts, 'testaudience', ['testissuer']);
+        data, publicKeys, 'testaudience', ['testissuer']);
   } catch (e) {
     t.equal(e.message.indexOf('Invalid issuer'), 0);
     t.end();
@@ -665,7 +666,7 @@ test('should pass due to valid issuer', async t => {
 
   const client = new OAuth2Client({clientId, clientSecret, redirectUri});
   await client.verifySignedJwtWithCerts(
-      data, oauthcerts, 'testaudience', ['testissuer']);
+      data, publicKeys, 'testaudience', ['testissuer']);
   t.end();
 });
 
@@ -676,7 +677,7 @@ test('should be able to retrieve a list of Google certificates', async t => {
           .withArgs('https://www.googleapis.com/oauth2/v3/certs')
           .returns({
             status: 200,
-            data: oauthcerts,
+            data: publicKeys,
             headers: {
               'Cache-Control':
                   'public, max-age=23641, must-revalidate, no-transform',
@@ -701,7 +702,7 @@ test(
               .withArgs('https://www.googleapis.com/oauth2/v3/certs')
               .returns({
                 status: 200,
-                data: oauthcerts,
+                data: publicKeys,
                 headers: {
                   'cache-control':
                       'public, max-age=23641, must-revalidate, no-transform',

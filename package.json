@@ -20,7 +20,8 @@
     "client library"
   ],
   "dependencies": {
-    "axios": "^0.17.1"
+    "axios": "^0.17.1",
+    "pem-jwk": "^1.5.1"
   },
   "devDependencies": {
     "@types/node": "^9.4.6",
@@ -57,7 +58,7 @@
   "scripts": {
     "karma": "karma start",
     "testling": "npm run compile && browserify --debug -t brfs build/test/test.oauth2.js | testling -x open",
-    "browserify": "browserify --debug -t brfs build/test/test.oauth2.js -o build/web/test.oauth2.web.js",
+    "browserify": "browserify --debug build/test/test.oauth2.js -o build/web/test.oauth2.web.js",
     "test": "nyc tape --require source-map-support/register build/test/**/*.js | tap-spec",
     "codecov": "nyc report --reporter=json && codecov -f coverage/*.json",
     "clean": "gts clean",

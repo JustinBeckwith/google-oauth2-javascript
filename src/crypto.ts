@@ -22,17 +22,15 @@ const isBrowser = (typeof window !== 'undefined');
 const algo = 'RSASSA-PKCS1-v1_5';
 
 export async function verify(jwk: JWK, data: string, signature: string) {
+  console.log('VERIFY JWK!!!\n--------------');
+  console.log(`jwk: ${jwk}`);
+  console.log(`data: ${data}`);
+  console.log(`signature: ${signature}`);
   if (isBrowser) {
-    console.log('VERIFY JWK!!!\n--------------');
-    console.log(`jwk: ${jwk}`);
-    console.log(`data: ${data}`);
-    console.log(`signature: ${signature}`);
     const key = await window.crypto.subtle.importKey(
-        'jwk', jwk, {name: 'RSASSA-PKCS1-v1_5', hash: {name: 'SHA-256'}}, false,
+        'jwk', jwk, {name: 'RSASSA-PKCS1-v1_5', hash: {name: 'SHA-256'}}, true,
         ['verify']);
-    console.log(key);
-    return window.crypto.subtle.verify(
-        algo, key, str2ab(signature), str2ab(data));
+    return window.crypto.subtle.verify(algo, key, Buffer.from(signature), Buffer.from(data));
   } else {
     const pem = p2j.jwk2pem(jwk);
     return crypto.createVerify('RSA-SHA256')
@@ -55,7 +53,7 @@ export function randomString(size: number) {
 
 export async function hashIt(data: string) {
   if (isBrowser) {
-    const buf = Buffer.from(data, 'utf-8');
+    const buf = Buffer.from(data);
     const hashBuf = await window.crypto.subtle.digest('SHA-256', buf);
     const hash = Buffer.from(hashBuf).toString('base64');
     return hash;
@@ -65,16 +63,16 @@ export async function hashIt(data: string) {
 }
 
 export async function getSignature(data: string, jwk: JWK) {
+  console.log(`GET SIGNATURE!\n---------------`);
+  console.log(`data: ${data}`);
+  console.log(`privateKey: ${JSON.stringify(jwk)}`);
   if (isBrowser) {
-    console.log(`GET SIGNATURE!\n---------------`);
-    console.log(`data: ${data}`);
-    console.log(`privateKey: ${jwk}`);
     const key = await window.crypto.subtle.importKey(
-        'jwk', jwk, {name: algo, hash: {name: 'SHA-256'}}, false, ['sign']);
-    console.log(`key: ${key}`);
-    const signature = await window.crypto.subtle.sign(algo, key, str2ab(data));
-    console.log(signature);
-    return String.fromCharCode.apply(null, new Uint16Array(signature));
+        'jwk', jwk, {name: algo, hash: {name: 'SHA-256'}}, true, ['sign']);
+    const signature = await window.crypto.subtle.sign(algo, key, Buffer.from(data));
+    const sig = Buffer.from(signature).toString('base64');
+    console.log(`sig: ${sig}`);
+    return sig;
   } else {
     const pem = p2j.jwk2pem(jwk);
     console.log(pem);
@@ -82,13 +80,4 @@ export async function getSignature(data: string, jwk: JWK) {
     console.log(`sig: ${sig}`);
     return sig;
   }
-}
-
-function str2ab(str: string) {
-  const buf = new ArrayBuffer(str.length);
-  const bufView = new Uint8Array(buf);
-  for (let i = 0; i < str.length; i++) {
-    bufView[i] = str.charCodeAt(i);
-  }
-  return buf;
 }

@@ -20,7 +20,7 @@
     "client library"
   ],
   "dependencies": {
-    "axios": "^0.17.1",
+    "axios": "^0.18.0",
     "pem-jwk": "^1.5.1"
   },
   "devDependencies": {

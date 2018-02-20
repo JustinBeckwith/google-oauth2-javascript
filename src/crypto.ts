@@ -23,14 +23,14 @@ const algo = 'RSASSA-PKCS1-v1_5';
 
 export async function verify(jwk: JWK, data: string, signature: string) {
   console.log('VERIFY JWK!!!\n--------------');
-  console.log(`jwk: ${jwk}`);
+  console.log(`jwk: ${JSON.stringify(jwk)}`);
   console.log(`data: ${data}`);
   console.log(`signature: ${signature}`);
   if (isBrowser) {
     const key = await window.crypto.subtle.importKey(
-        'jwk', jwk, {name: 'RSASSA-PKCS1-v1_5', hash: {name: 'SHA-256'}}, true,
-        ['verify']);
-    return window.crypto.subtle.verify(algo, key, Buffer.from(signature), Buffer.from(data));
+        'jwk', jwk, {name: algo, hash: {name: 'SHA-256'}}, false, ['verify']);
+    return window.crypto.subtle.verify(
+        algo, key, Buffer.from(signature), Buffer.from(data));
   } else {
     const pem = p2j.jwk2pem(jwk);
     return crypto.createVerify('RSA-SHA256')
@@ -42,10 +42,9 @@ export async function verify(jwk: JWK, data: string, signature: string) {
 export function randomString(size: number) {
   if (isBrowser) {
     const array = new Uint8Array(size);
-    const notb = window.crypto.getRandomValues(array);
-    const rando = String.fromCharCode.apply(null, notb);
-    const b64Rando = btoa(rando);
-    return b64Rando;
+    window.crypto.getRandomValues(array);
+    const rando = Buffer.from(array.buffer).toString('base64');
+    return rando;
   } else {
     return crypto.randomBytes(size).toString('base64');
   }
@@ -68,8 +67,9 @@ export async function getSignature(data: string, jwk: JWK) {
   console.log(`privateKey: ${JSON.stringify(jwk)}`);
   if (isBrowser) {
     const key = await window.crypto.subtle.importKey(
-        'jwk', jwk, {name: algo, hash: {name: 'SHA-256'}}, true, ['sign']);
-    const signature = await window.crypto.subtle.sign(algo, key, Buffer.from(data));
+        'jwk', jwk, {name: algo, hash: {name: 'SHA-256'}}, false, ['sign']);
+    const signature =
+        await window.crypto.subtle.sign(algo, key, Buffer.from(data));
     const sig = Buffer.from(signature).toString('base64');
     console.log(`sig: ${sig}`);
     return sig;

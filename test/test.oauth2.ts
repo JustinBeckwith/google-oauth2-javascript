@@ -205,7 +205,7 @@ test(
       t.end();
     });
 
-test.only('should verify a valid certificate against a jwt', async t => {
+test('should verify a valid certificate against a jwt', async t => {
   const maxLifetimeSecs = 86400;
   const now = new Date().getTime() / 1000;
   const expiry = now + (maxLifetimeSecs / 2);

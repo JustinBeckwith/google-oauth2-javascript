@@ -37,7 +37,7 @@
     "opn": "^5.2.0",
     "prettier": "^1.10.2",
     "server-destroy": "^1.0.1",
-    "sinon": "^4.3.0",
+    "sinon": "^5.0.0",
     "source-map-support": "^0.5.3",
     "tap-spec": "^4.1.1",
     "tape": "^4.9.0",
